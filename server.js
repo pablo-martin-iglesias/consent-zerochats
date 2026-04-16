@@ -43,23 +43,32 @@ app.post('/consent', async (req, res) => {
     await new Promise(r => setTimeout(r, 2000));
     console.log(`[consent] Formulario cargado`);
 
-    await page.click('input[name="first_name"]', { clickCount: 3 });
-    await page.type('input[name="first_name"]', name, { delay: 80 });
-    await new Promise(r => setTimeout(r, 300));
+    // Forzar valores via JavaScript para compatibilidad con frameworks Vue/React
+    await page.evaluate((name, phone, email) => {
+      const setVal = (selector, value) => {
+        const el = document.querySelector(selector);
+        if (!el) throw new Error('Campo no encontrado: ' + selector);
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        nativeInputValueSetter.call(el, value);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+      };
+      setVal('input[name="first_name"]', name);
+      setVal('input[name="phone"]', phone);
+      setVal('input[name="email"]', email);
+    }, name, phone, email);
 
-    await page.click('input[name="phone"]', { clickCount: 3 });
-    await page.type('input[name="phone"]', phone, { delay: 80 });
-    await new Promise(r => setTimeout(r, 300));
+    console.log(`[consent] Campos rellenados`);
+    await new Promise(r => setTimeout(r, 1000));
 
-    await page.click('input[name="email"]', { clickCount: 3 });
-    await page.type('input[name="email"]', email, { delay: 80 });
-    await new Promise(r => setTimeout(r, 500));
-
+    // Checkbox de consentimiento
     const checkbox = await page.$('input[name="terms_and_conditions"]');
     if (!checkbox) throw new Error('Checkbox de consentimiento no encontrado');
     await checkbox.click();
     await new Promise(r => setTimeout(r, 500));
 
+    // Submit
     const submitBtn = await page.$('button[type="submit"]');
     if (!submitBtn) throw new Error('Boton submit no encontrado');
     await submitBtn.click();
@@ -72,7 +81,7 @@ app.post('/consent', async (req, res) => {
                       pageContent.includes('thank') ||
                       pageContent.includes('submitted');
 
-    console.log(`[consent] ✅ Completado para: ${email}`);
+    console.log(`[consent] ✅ Completado para: ${email} | submitted: ${submitted}`);
     res.json({ success: true, email, submitted });
 
   } catch (error) {
