@@ -1,4 +1,3 @@
-cat > server.js << 'EOF'
 const express = require('express');
 const puppeteer = require('puppeteer');
 
@@ -87,4 +86,3 @@ app.post('/consent', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Consent server corriendo en puerto ${PORT}`);
 });
-EOF
