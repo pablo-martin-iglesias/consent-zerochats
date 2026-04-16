@@ -67,18 +67,22 @@ app.post('/consent', async (req, res) => {
     console.log(`[consent] Campos rellenados`);
     await new Promise(r => setTimeout(r, 1000));
 
-    // Checkbox de consentimiento
+    // Verificar y marcar checkbox
     const checkbox = await page.$('input[name="terms_and_conditions"]');
-    if (!checkbox) throw new Error('Checkbox de consentimiento no encontrado');
-    await checkbox.click();
+    if (!checkbox) throw new Error('Checkbox no encontrado');
+    const isChecked = await page.evaluate(el => el.checked, checkbox);
+    console.log(`[consent] Checkbox estado: ${isChecked}`);
+    if (!isChecked) await checkbox.click();
     await new Promise(r => setTimeout(r, 500));
 
-    // Submit
+    // Verificar botón submit
     const submitBtn = await page.$('button[type="submit"]');
     if (!submitBtn) throw new Error('Boton submit no encontrado');
+    const btnText = await page.evaluate(el => el.innerText, submitBtn);
+    console.log(`[consent] Submit button texto: ${btnText}`);
     await submitBtn.click();
 
-    await new Promise(r => setTimeout(r, 5000));
+    await new Promise(r => setTimeout(r, 6000));
 
     const pageContent = await page.content();
     const submitted = pageContent.includes('success') ||
@@ -86,7 +90,7 @@ app.post('/consent', async (req, res) => {
                       pageContent.includes('thank') ||
                       pageContent.includes('submitted');
 
-    // Captura para debug - ver qué hay en la página tras submit
+    // Debug - ver qué hay en la página tras submit
     const bodyText = await page.evaluate(() => document.body.innerText);
     console.log('[consent] Contenido página post-submit:', bodyText.substring(0, 300));
 
