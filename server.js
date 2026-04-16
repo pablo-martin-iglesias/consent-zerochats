@@ -1,14 +1,18 @@
 const express = require('express');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-
-puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const FORM_URL = 'https://api.leadconnectorhq.com/widget/form/vDjYVcgTJpZZ2Mf0L0TW';
+const GHL_API_KEY = 'pit-ec183414-0c73-468c-b9bf-4d855ea5133b';
+const GHL_LOCATION_ID = 'pJyuDyDmqRLuYm63c6Oj';
+const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
+
+const GHL_HEADERS = {
+  'Authorization': `Bearer ${GHL_API_KEY}`,
+  'Version': '2021-07-28',
+  'Content-Type': 'application/json'
+};
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Consent server running' });
@@ -27,80 +31,70 @@ app.post('/consent', async (req, res) => {
 
   console.log(`[consent] Procesando: ${cleanEmail}`);
 
-  let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions'
-      ]
+    // 1. Buscar contacto por email usando POST /contacts/search
+    const searchRes = await fetch(`${GHL_BASE_URL}/contacts/search`, {
+      method: 'POST',
+      headers: GHL_HEADERS,
+      body: JSON.stringify({
+        locationId: GHL_LOCATION_ID,
+        filters: [
+          {
+            field: 'email',
+            operator: 'eq',
+            value: cleanEmail
+          }
+        ]
+      })
     });
 
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
+    const searchData = await searchRes.json();
+    console.log(`[consent] Búsqueda:`, JSON.stringify(searchData).substring(0, 300));
 
-    console.log(`[consent] Navegando al formulario...`);
-    await page.goto(FORM_URL, { waitUntil: 'networkidle0', timeout: 30000 });
+    let contactId = searchData?.contacts?.[0]?.id;
 
-    await page.waitForSelector('input[name="first_name"]', { visible: true, timeout: 15000 });
-    await new Promise(r => setTimeout(r, 2000));
-    console.log(`[consent] Formulario cargado`);
+    // 2. Si no existe, crearlo
+    if (!contactId) {
+      console.log(`[consent] Contacto no encontrado, creando...`);
+      const createRes = await fetch(`${GHL_BASE_URL}/contacts/`, {
+        method: 'POST',
+        headers: GHL_HEADERS,
+        body: JSON.stringify({
+          locationId: GHL_LOCATION_ID,
+          firstName: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone
+        })
+      });
+      const createData = await createRes.json();
+      console.log(`[consent] Crear contacto:`, JSON.stringify(createData).substring(0, 300));
+      contactId = createData?.contact?.id;
+    } else {
+      console.log(`[consent] Contacto encontrado: ${contactId}`);
+    }
 
-    // Forzar valores via JavaScript para compatibilidad con Vue/React
-    await page.evaluate((name, phone, email) => {
-      const setVal = (selector, value) => {
-        const el = document.querySelector(selector);
-        if (!el) throw new Error('Campo no encontrado: ' + selector);
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(el, value);
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('blur', { bubbles: true }));
-      };
-      setVal('input[name="first_name"]', name);
-      setVal('input[name="phone"]', phone);
-      setVal('input[name="email"]', email);
-    }, cleanName, cleanPhone, cleanEmail);
+    if (!contactId) throw new Error('No se pudo obtener el ID del contacto');
 
-    console.log(`[consent] Campos rellenados`);
-    await new Promise(r => setTimeout(r, 1000));
+    // 3. Actualizar consentimiento
+    const updateRes = await fetch(`${GHL_BASE_URL}/contacts/${contactId}`, {
+      method: 'PUT',
+      headers: GHL_HEADERS,
+      body: JSON.stringify({
+        locationId: GHL_LOCATION_ID,
+        smsOptIn: true,
+        callOptIn: true
+      })
+    });
 
-    // Checkbox
-    const checkbox = await page.$('input[name="terms_and_conditions"]');
-    if (!checkbox) throw new Error('Checkbox no encontrado');
-    const isChecked = await page.evaluate(el => el.checked, checkbox);
-    if (!isChecked) await checkbox.click();
-    console.log(`[consent] Checkbox marcado`);
-    await new Promise(r => setTimeout(r, 500));
+    const updateData = await updateRes.json();
+    console.log(`[consent] Update:`, JSON.stringify(updateData).substring(0, 300));
 
-    // Submit
-    const submitBtn = await page.$('button[type="submit"]');
-    if (!submitBtn) throw new Error('Boton submit no encontrado');
-    await submitBtn.click();
-    console.log(`[consent] Formulario enviado`);
-
-    await new Promise(r => setTimeout(r, 5000));
-
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    console.log('[consent] Post-submit:', bodyText.substring(0, 200));
-
-    const submitted = !bodyText.includes('captcha') && !bodyText.includes('Captcha');
-
-    console.log(`[consent] ✅ Completado para: ${cleanEmail} | submitted: ${submitted}`);
-    res.json({ success: true, email: cleanEmail, submitted });
+    console.log(`[consent] ✅ Consentimiento registrado para: ${cleanEmail}`);
+    res.json({ success: true, email: cleanEmail, contactId });
 
   } catch (error) {
     console.error(`[consent] ❌ Error:`, error.message);
     res.status(500).json({ error: error.message, email: cleanEmail });
-  } finally {
-    if (browser) await browser.close().catch(() => {});
   }
 });
 
