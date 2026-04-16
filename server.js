@@ -89,6 +89,10 @@ app.post('/consent', async (req, res) => {
     console.log(`[consent] ✅ Completado para: ${cleanEmail} | submitted: ${submitted}`);
     res.json({ success: true, email: cleanEmail, submitted });
 
+    // Captura para debug - ver qué hay en la página tras submit
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    console.log('[consent] Contenido página post-submit:', bodyText.substring(0, 300));
+
   } catch (error) {
     console.error(`[consent] ❌ Error para ${cleanEmail}:`, error.message);
     res.status(500).json({ error: error.message, email: cleanEmail });
