@@ -26,7 +26,8 @@ app.post('/consent', async (req, res) => {
   console.log(`[consent] Procesando: ${cleanEmail}`);
 
   try {
-    const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+    const { randomUUID } = require('crypto');
+    const sessionId = randomUUID();
     const timestamp = Date.now();
 
     const payload = new URLSearchParams({
