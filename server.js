@@ -32,50 +32,36 @@ app.post('/consent', async (req, res) => {
   console.log(`[consent] Procesando: ${cleanEmail}`);
 
   try {
-    // 1. Buscar contacto por email usando POST /contacts/search
-    const searchRes = await fetch(`${GHL_BASE_URL}/contacts/search`, {
+    let contactId = null;
+
+    // 1. Intentar crear contacto — si ya existe, GHL devuelve el contactId en el error
+    const createRes = await fetch(`${GHL_BASE_URL}/contacts/`, {
       method: 'POST',
       headers: GHL_HEADERS,
       body: JSON.stringify({
         locationId: GHL_LOCATION_ID,
-        filters: [
-          {
-            field: 'email',
-            operator: 'eq',
-            value: cleanEmail
-          }
-        ]
+        firstName: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone
       })
     });
 
-    const searchData = await searchRes.json();
-    console.log(`[consent] Búsqueda:`, JSON.stringify(searchData).substring(0, 300));
+    const createData = await createRes.json();
+    console.log(`[consent] Crear/buscar contacto:`, JSON.stringify(createData).substring(0, 300));
 
-    let contactId = searchData?.contacts?.[0]?.id;
-
-    // 2. Si no existe, crearlo
-    if (!contactId) {
-      console.log(`[consent] Contacto no encontrado, creando...`);
-      const createRes = await fetch(`${GHL_BASE_URL}/contacts/`, {
-        method: 'POST',
-        headers: GHL_HEADERS,
-        body: JSON.stringify({
-          locationId: GHL_LOCATION_ID,
-          firstName: cleanName,
-          email: cleanEmail,
-          phone: cleanPhone
-        })
-      });
-      const createData = await createRes.json();
-      console.log(`[consent] Crear contacto:`, JSON.stringify(createData).substring(0, 300));
-      contactId = createData?.contact?.id;
-    } else {
-      console.log(`[consent] Contacto encontrado: ${contactId}`);
+    if (createData?.contact?.id) {
+      // Contacto creado nuevo
+      contactId = createData.contact.id;
+      console.log(`[consent] Contacto nuevo: ${contactId}`);
+    } else if (createData?.meta?.contactId) {
+      // Contacto ya existía — GHL devuelve el id en meta
+      contactId = createData.meta.contactId;
+      console.log(`[consent] Contacto existente: ${contactId}`);
     }
 
     if (!contactId) throw new Error('No se pudo obtener el ID del contacto');
 
-    // 3. Actualizar consentimiento
+    // 2. Actualizar consentimiento
     const updateRes = await fetch(`${GHL_BASE_URL}/contacts/${contactId}`, {
       method: 'PUT',
       headers: GHL_HEADERS,
