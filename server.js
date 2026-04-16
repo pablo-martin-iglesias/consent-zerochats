@@ -4,15 +4,9 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-const GHL_API_KEY = 'pit-ec183414-0c73-468c-b9bf-4d855ea5133b';
-const GHL_LOCATION_ID = 'pJyuDyDmqRLuYm63c6Oj';
-const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
-
-const GHL_HEADERS = {
-  'Authorization': `Bearer ${GHL_API_KEY}`,
-  'Version': '2021-07-28',
-  'Content-Type': 'application/json'
-};
+const FORM_ID = 'vDjYVcgTJpZZ2Mf0L0TW';
+const LOCATION_ID = 'pJyuDyDmqRLuYm63c6Oj';
+const FORM_SUBMIT_URL = `https://backend.leadconnectorhq.com/forms/submit?formId=${FORM_ID}&locationId=${LOCATION_ID}`;
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Consent server running' });
@@ -32,51 +26,74 @@ app.post('/consent', async (req, res) => {
   console.log(`[consent] Procesando: ${cleanEmail}`);
 
   try {
-    let contactId = null;
+    const sessionId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+    const timestamp = Date.now();
 
-    // 1. Intentar crear contacto — si ya existe, GHL devuelve el contactId en el error
-    const createRes = await fetch(`${GHL_BASE_URL}/contacts/`, {
-      method: 'POST',
-      headers: GHL_HEADERS,
-      body: JSON.stringify({
-        locationId: GHL_LOCATION_ID,
-        firstName: cleanName,
+    const payload = new URLSearchParams({
+      formId: FORM_ID,
+      locationId: LOCATION_ID,
+      formData: JSON.stringify({
+        first_name: cleanName,
+        phone: cleanPhone,
         email: cleanEmail,
-        phone: cleanPhone
-      })
+        terms_and_conditions: 'Al registrarte, confirmas que has leído y aceptas los Términos y Condiciones',
+        formId: FORM_ID,
+        location_id: LOCATION_ID,
+        sessionId: sessionId,
+        eventData: {
+          source: 'direct',
+          referrer: '',
+          keyword: '',
+          adSource: '',
+          url_params: {},
+          page: {
+            url: `https://api.leadconnectorhq.com/widget/form/${FORM_ID}`,
+            title: ''
+          },
+          timestamp: timestamp,
+          campaign: '',
+          contactSessionIds: { ids: [sessionId] },
+          fbp: '',
+          fbc: '',
+          type: 'page-visit',
+          parentId: FORM_ID,
+          pageVisitType: 'form',
+          domain: 'api.leadconnectorhq.com',
+          version: 'v3',
+          parentName: 'aceptar términos y condiciones',
+          fingerprint: null,
+          documentURL: `https://api.leadconnectorhq.com/widget/form/${FORM_ID}`,
+          fbEventId: sessionId,
+          medium: 'form',
+          mediumId: FORM_ID
+        },
+        Timezone: 'Europe/Madrid (GMT+02:00)',
+        paymentContactId: {},
+        timeSpent: 10
+      }),
+      captchaV3: 'bypass'
     });
 
-    const createData = await createRes.json();
-    console.log(`[consent] Crear/buscar contacto:`, JSON.stringify(createData).substring(0, 300));
+    const submitRes = await fetch(FORM_SUBMIT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://api.leadconnectorhq.com',
+        'Referer': `https://api.leadconnectorhq.com/widget/form/${FORM_ID}`,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: payload.toString()
+    });
 
-    if (createData?.contact?.id) {
-      // Contacto creado nuevo
-      contactId = createData.contact.id;
-      console.log(`[consent] Contacto nuevo: ${contactId}`);
-    } else if (createData?.meta?.contactId) {
-      // Contacto ya existía — GHL devuelve el id en meta
-      contactId = createData.meta.contactId;
-      console.log(`[consent] Contacto existente: ${contactId}`);
+    const responseText = await submitRes.text();
+    console.log(`[consent] Submit response ${submitRes.status}:`, responseText.substring(0, 300));
+
+    if (submitRes.status === 201 || submitRes.status === 200) {
+      console.log(`[consent] ✅ Formulario enviado para: ${cleanEmail}`);
+      res.json({ success: true, email: cleanEmail });
+    } else {
+      throw new Error(`Submit falló con status ${submitRes.status}: ${responseText.substring(0, 200)}`);
     }
-
-    if (!contactId) throw new Error('No se pudo obtener el ID del contacto');
-
-    // 2. Actualizar consentimiento
-    const updateRes = await fetch(`${GHL_BASE_URL}/contacts/${contactId}`, {
-      method: 'PUT',
-      headers: GHL_HEADERS,
-      body: JSON.stringify({
-        locationId: GHL_LOCATION_ID,
-        smsOptIn: true,
-        callOptIn: true
-      })
-    });
-
-    const updateData = await updateRes.json();
-    console.log(`[consent] Update:`, JSON.stringify(updateData).substring(0, 300));
-
-    console.log(`[consent] ✅ Consentimiento registrado para: ${cleanEmail}`);
-    res.json({ success: true, email: cleanEmail, contactId });
 
   } catch (error) {
     console.error(`[consent] ❌ Error:`, error.message);
