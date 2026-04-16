@@ -18,7 +18,12 @@ app.post('/consent', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos: name, phone, email' });
   }
 
-  console.log(`[consent] Procesando: ${email}`);
+  // Limpiar el = que n8n añade al inicio de los valores
+  const cleanName = String(name).replace(/^=/, '').trim();
+  const cleanPhone = String(phone).replace(/^=/, '').trim();
+  const cleanEmail = String(email).replace(/^=/, '').trim();
+
+  console.log(`[consent] Procesando: ${cleanEmail}`);
 
   let browser;
   try {
@@ -43,7 +48,7 @@ app.post('/consent', async (req, res) => {
     await new Promise(r => setTimeout(r, 2000));
     console.log(`[consent] Formulario cargado`);
 
-    // Forzar valores via JavaScript para compatibilidad con frameworks Vue/React
+    // Forzar valores via JavaScript para compatibilidad con Vue/React
     await page.evaluate((name, phone, email) => {
       const setVal = (selector, value) => {
         const el = document.querySelector(selector);
@@ -57,7 +62,7 @@ app.post('/consent', async (req, res) => {
       setVal('input[name="first_name"]', name);
       setVal('input[name="phone"]', phone);
       setVal('input[name="email"]', email);
-    }, name, phone, email);
+    }, cleanName, cleanPhone, cleanEmail);
 
     console.log(`[consent] Campos rellenados`);
     await new Promise(r => setTimeout(r, 1000));
@@ -81,12 +86,12 @@ app.post('/consent', async (req, res) => {
                       pageContent.includes('thank') ||
                       pageContent.includes('submitted');
 
-    console.log(`[consent] ✅ Completado para: ${email} | submitted: ${submitted}`);
-    res.json({ success: true, email, submitted });
+    console.log(`[consent] ✅ Completado para: ${cleanEmail} | submitted: ${submitted}`);
+    res.json({ success: true, email: cleanEmail, submitted });
 
   } catch (error) {
-    console.error(`[consent] ❌ Error para ${email}:`, error.message);
-    res.status(500).json({ error: error.message, email });
+    console.error(`[consent] ❌ Error para ${cleanEmail}:`, error.message);
+    res.status(500).json({ error: error.message, email: cleanEmail });
   } finally {
     if (browser) await browser.close().catch(() => {});
   }
